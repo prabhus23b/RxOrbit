@@ -195,21 +195,22 @@ export function AdminDashboardPage({
         apiRequest<{ certificates: Certificate[] }>('/api/admin/certificates'),
         apiRequest<{ announcements: Announcement[] }>('/api/admin/announcements'),
       ]);
-      setStats(ov.stats);
-      setStudents(st.users);
-      setCurriculum(curr.units);
-      setMaterials(mat.materials);
-      setEvents(ev.events);
-      setRegistrations(reg.registrations);
-      setAlbums(gal.albums);
-      setPhotos(gal.photos);
-      if (gal.albums.length > 0 && !photoAlbumId) {
-        setPhotoAlbumId(String(gal.albums[0].id));
+      setStats(ov?.stats && typeof ov.stats === 'object' ? ov.stats : {});
+      setStudents(Array.isArray(st?.users) ? st.users : []);
+      setCurriculum(Array.isArray(curr?.units) ? curr.units : []);
+      setMaterials(Array.isArray(mat?.materials) ? mat.materials : []);
+      setEvents(Array.isArray(ev?.events) ? ev.events : []);
+      setRegistrations(Array.isArray(reg?.registrations) ? reg.registrations : []);
+      const safeAlbums = Array.isArray(gal?.albums) ? gal.albums : [];
+      setAlbums(safeAlbums);
+      setPhotos(Array.isArray(gal?.photos) ? gal.photos : []);
+      if (safeAlbums.length > 0 && !photoAlbumId) {
+        setPhotoAlbumId(String(safeAlbums[0].id));
       }
-      setTeam(tm.members);
-      setVoices(vc.voices);
-      setCertificates(ct.certificates);
-      setAnnouncements(an.announcements);
+      setTeam(Array.isArray(tm?.members) ? tm.members : []);
+      setVoices(Array.isArray(vc?.voices) ? vc.voices : []);
+      setCertificates(Array.isArray(ct?.certificates) ? ct.certificates : []);
+      setAnnouncements(Array.isArray(an?.announcements) ? an.announcements : []);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Unable to load admin data.');
     }

@@ -17,12 +17,14 @@ import { generateCertificatePdfBuffer } from './server/pdf';
 import {
   closePostgresPool,
   initializePostgresDatabase,
+  inspectDatabaseUrlSafety,
   isPostgresConfigured,
   pgExecute,
   pgHealthCheck,
   pgQueryOne,
   pgQueryRows,
   pgWithTransaction,
+  type PostgresServiceError,
   toIsoTimestamp,
   toPgBoolean,
   toPgInt,
@@ -454,8 +456,28 @@ export async function createRxOrbitApp(options: { skipVite?: boolean } = {}) {
       const configured = isPostgresConfigured();
       const storageMode = getStorageMode();
       if (req.query.checkDb === '1' && configured) {
-        const dbHealth = await pgHealthCheck();
-        res.json({ ok: true, databaseConfigured: true, storageMode, database: dbHealth });
+        const diagnostics = inspectDatabaseUrlSafety();
+        try {
+          const dbHealth = await pgHealthCheck();
+          res.json({
+            ok: true,
+            databaseConfigured: true,
+            storageMode,
+            database: dbHealth,
+            diagnostics,
+          });
+        } catch (err) {
+          const pgErr = err as PostgresServiceError;
+          res.status(pgErr.statusCode ?? 503).json({
+            ok: false,
+            databaseConfigured: true,
+            storageMode,
+            error: pgErr.message || 'Database check failed.',
+            code: pgErr.code ?? null,
+            detail: pgErr.safeDetail ?? pgErr.message ?? 'Database check failed.',
+            diagnostics,
+          });
+        }
         return;
       }
       res.json({ ok: true, databaseConfigured: configured, storageMode });

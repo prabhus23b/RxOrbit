@@ -66,8 +66,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshAdminStatus = useCallback(async () => {
     try {
-      const data = await apiRequest<AdminStatus>('/api/auth/admin-status');
-      setAdminStatus(data);
+      const data = await apiRequest<Partial<AdminStatus>>('/api/auth/admin-status');
+      setAdminStatus({
+        envPasscodeConfigured: Boolean(data?.envPasscodeConfigured),
+        hasClaimedAdmin: Boolean(data?.hasClaimedAdmin),
+      });
     } catch {
       // ignore transient error
     }
@@ -81,11 +84,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setNotificationsLoading(true);
     try {
-      const data = await apiRequest<{ notifications: NotificationItem[]; unreadCount: number }>(
+      const data = await apiRequest<{ notifications?: NotificationItem[]; unreadCount?: number }>(
         '/api/notifications'
       );
-      setNotifications(data.notifications);
-      setUnreadCount(data.unreadCount);
+      const safeNotifications = Array.isArray(data?.notifications) ? data.notifications : [];
+      setNotifications(safeNotifications);
+      setUnreadCount(
+        typeof data?.unreadCount === 'number'
+          ? data.unreadCount
+          : safeNotifications.filter((n) => !n.isRead).length
+      );
     } catch {
       // ignore transient error
     } finally {

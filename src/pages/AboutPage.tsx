@@ -127,30 +127,41 @@ const COMMITMENT_CLOSING =
   'Our goal is to contribute positively to the educational journey of pharmacy students.';
 
 export function AboutPage({ content, onNavigate }: AboutPageProps) {
-  const objectiveLines = content.objectives
+  const objectives = typeof content?.objectives === 'string' ? content.objectives : '';
+  const aboutSummary = typeof content?.aboutSummary === 'string' ? content.aboutSummary : '';
+  const vision = typeof content?.vision === 'string' ? content.vision : '';
+  const mission = typeof content?.mission === 'string' ? content.mission : '';
+  const whyRxOrbit = typeof content?.whyRxOrbit === 'string' ? content.whyRxOrbit : '';
+  const commitment = typeof content?.commitment === 'string' ? content.commitment : '';
+  const contactEmail = typeof content?.contactEmail === 'string' ? content.contactEmail : '';
+  const contactPhone = typeof content?.contactPhone === 'string' ? content.contactPhone : '';
+  const contactAddress = typeof content?.contactAddress === 'string' ? content.contactAddress : '';
+  const linkedinUrl = typeof content?.linkedinUrl === 'string' ? content.linkedinUrl : '';
+  const instagramUrl = typeof content?.instagramUrl === 'string' ? content.instagramUrl : '';
+  const youtubeUrl = typeof content?.youtubeUrl === 'string' ? content.youtubeUrl : '';
+
+  const objectiveLines = objectives
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean);
 
-  const aboutParagraphs = content.aboutSummary.trim()
-    ? content.aboutSummary
+  const aboutParagraphs = aboutSummary.trim()
+    ? aboutSummary
         .split(/\n\s*\n/)
         .map((p) => p.trim())
         .filter(Boolean)
     : DEFAULT_ABOUT_PARAGRAPHS;
 
-  const visionText = content.vision.trim() || DEFAULT_VISION_CONTENT;
-  const missionText = content.mission.trim() || DEFAULT_MISSION_CONTENT;
+  const visionText = vision.trim() || DEFAULT_VISION_CONTENT;
+  const missionText = mission.trim() || DEFAULT_MISSION_CONTENT;
   const hasCustomObjectives = objectiveLines.length > 0;
-  const hasCustomWhy = Boolean(content.whyRxOrbit.trim());
-  const hasCustomCommitment = Boolean(content.commitment.trim());
+  const hasCustomWhy = Boolean(whyRxOrbit.trim());
+  const hasCustomCommitment = Boolean(commitment.trim());
   const hasContactDetails = Boolean(
-    content.contactEmail.trim() ||
-      content.contactPhone.trim() ||
-      content.contactAddress.trim()
+    contactEmail.trim() || contactPhone.trim() || contactAddress.trim()
   );
   const hasSocialLinks = Boolean(
-    content.linkedinUrl.trim() || content.instagramUrl.trim() || content.youtubeUrl.trim()
+    linkedinUrl.trim() || instagramUrl.trim() || youtubeUrl.trim()
   );
 
   return (
@@ -370,27 +381,27 @@ export function AboutPage({ content, onNavigate }: AboutPageProps) {
           </h2>
           {hasContactDetails ? (
             <div className="space-y-2.5 text-sm text-slate-600">
-              {content.contactEmail.trim() && (
+              {contactEmail.trim() && (
                 <div className="flex items-center gap-2.5">
                   <Mail className="h-4 w-4 text-teal-700 shrink-0" />
                   <a
-                    href={`mailto:${content.contactEmail}`}
+                    href={`mailto:${contactEmail}`}
                     className="font-medium text-[#0F2442] hover:text-teal-700"
                   >
-                    {content.contactEmail}
+                    {contactEmail}
                   </a>
                 </div>
               )}
-              {content.contactPhone.trim() && (
+              {contactPhone.trim() && (
                 <div className="flex items-center gap-2.5">
                   <Phone className="h-4 w-4 text-teal-700 shrink-0" />
-                  <span className="tabular-nums">{content.contactPhone}</span>
+                  <span className="tabular-nums">{contactPhone}</span>
                 </div>
               )}
-              {content.contactAddress.trim() && (
+              {contactAddress.trim() && (
                 <div className="flex items-start gap-2.5">
                   <MapPin className="h-4 w-4 text-teal-700 shrink-0 mt-0.5" />
-                  <span>{content.contactAddress}</span>
+                  <span>{contactAddress}</span>
                 </div>
               )}
             </div>
@@ -406,9 +417,9 @@ export function AboutPage({ content, onNavigate }: AboutPageProps) {
                 Connect With RxOrbit
               </div>
               <div className="flex flex-wrap gap-3 text-xs font-semibold">
-                {content.linkedinUrl.trim() && (
+                {linkedinUrl.trim() && (
                   <a
-                    href={content.linkedinUrl}
+                    href={linkedinUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-4 py-2 rounded-lg border border-slate-200 text-[#0F2442] hover:bg-slate-50"
@@ -416,9 +427,9 @@ export function AboutPage({ content, onNavigate }: AboutPageProps) {
                     LinkedIn
                   </a>
                 )}
-                {content.instagramUrl.trim() && (
+                {instagramUrl.trim() && (
                   <a
-                    href={content.instagramUrl}
+                    href={instagramUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-4 py-2 rounded-lg border border-slate-200 text-[#0F2442] hover:bg-slate-50"
@@ -426,9 +437,9 @@ export function AboutPage({ content, onNavigate }: AboutPageProps) {
                     Instagram
                   </a>
                 )}
-                {content.youtubeUrl.trim() && (
+                {youtubeUrl.trim() && (
                   <a
-                    href={content.youtubeUrl}
+                    href={youtubeUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-4 py-2 rounded-lg border border-slate-200 text-[#0F2442] hover:bg-slate-50"

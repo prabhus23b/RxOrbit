@@ -68,15 +68,21 @@ export function ProfilePage({ curriculumUnits = [], onNavigate }: ProfilePagePro
     (async () => {
       setActivityLoading(true);
       try {
-        const [voiceRes, regRes, certRes] = await Promise.all([
-          apiRequest<{ voices: VoiceEntry[] }>('/api/my/voices'),
-          apiRequest<{ registrations: EventRegistration[] }>('/api/my/registrations'),
-          apiRequest<{ certificates: Certificate[] }>('/api/my/certificates'),
+        const [voiceRes, regRes, certRes] = await Promise.allSettled([
+          apiRequest<{ voices?: VoiceEntry[] }>('/api/my/voices'),
+          apiRequest<{ registrations?: EventRegistration[] }>('/api/my/registrations'),
+          apiRequest<{ certificates?: Certificate[] }>('/api/my/certificates'),
         ]);
         if (!active) return;
-        setVoices(voiceRes.voices);
-        setRegistrations(regRes.registrations);
-        setCertificates(certRes.certificates);
+        if (voiceRes.status === 'fulfilled' && Array.isArray(voiceRes.value?.voices)) {
+          setVoices(voiceRes.value.voices);
+        }
+        if (regRes.status === 'fulfilled' && Array.isArray(regRes.value?.registrations)) {
+          setRegistrations(regRes.value.registrations);
+        }
+        if (certRes.status === 'fulfilled' && Array.isArray(certRes.value?.certificates)) {
+          setCertificates(certRes.value.certificates);
+        }
       } catch {
         // ignore transient error
       } finally {

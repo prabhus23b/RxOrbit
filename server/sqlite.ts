@@ -15,7 +15,7 @@ fs.mkdirSync(MEDIA_DIR, { recursive: true });
 const dbPath = path.resolve(DATA_DIR, 'rxorbit.sqlite');
 export const db = new DatabaseSync(dbPath);
 
-db.exec(`
+export const SQLITE_SCHEMA_SQL = `
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;
 
@@ -198,7 +198,9 @@ db.exec(`
     created_at TEXT NOT NULL,
     UNIQUE(unit_id, name)
   );
-`);
+`;
+
+db.exec(SQLITE_SCHEMA_SQL);
 
 // Ensure profile columns exist on pre-existing databases
 const userColumns = db.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>;

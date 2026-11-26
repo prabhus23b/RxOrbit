@@ -33,35 +33,45 @@ interface HomePageProps {
 
 export function HomePage({
   content,
-  announcements,
-  events,
-  photos,
-  team,
-  voices,
+  announcements = [],
+  events = [],
+  photos = [],
+  team = [],
+  voices = [],
   onNavigate,
   onOpenStudyProgram,
 }: HomePageProps) {
-  const upcomingEvents = events.filter((e) => e.status === 'upcoming').slice(0, 3);
-  const featuredPhotos = photos.slice(0, 4);
-  const featuredTeam = team.slice(0, 4);
-  const featuredVoices = voices.slice(0, 3);
+  const safeAnnouncements = Array.isArray(announcements) ? announcements : [];
+  const safeEvents = Array.isArray(events) ? events : [];
+  const safePhotos = Array.isArray(photos) ? photos : [];
+  const safeTeam = Array.isArray(team) ? team : [];
+  const safeVoices = Array.isArray(voices) ? voices : [];
+
+  const aboutSummary = typeof content?.aboutSummary === 'string' ? content.aboutSummary : '';
+  const vision = typeof content?.vision === 'string' ? content.vision : '';
+  const contactEmail = typeof content?.contactEmail === 'string' ? content.contactEmail : '';
+
+  const upcomingEvents = safeEvents.filter((e) => e.status === 'upcoming').slice(0, 3);
+  const featuredPhotos = safePhotos.slice(0, 4);
+  const featuredTeam = safeTeam.slice(0, 4);
+  const featuredVoices = safeVoices.slice(0, 3);
 
   return (
     <div className="pb-8">
       {/* Active Announcements Bar */}
-      {announcements.length > 0 && (
+      {safeAnnouncements.length > 0 && (
         <div className="bg-[#0F2442] text-white border-b border-slate-800">
           <div className="max-w-[1280px] mx-auto px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs sm:text-sm">
             <div className="flex items-center gap-2.5 min-w-0">
               <Megaphone className="h-4 w-4 text-teal-400 shrink-0" />
               <span className="font-semibold text-teal-300 shrink-0">
-                {announcements[0].category}:
+                {safeAnnouncements[0].category}:
               </span>
-              <span className="truncate text-slate-100">{announcements[0].title}</span>
+              <span className="truncate text-slate-100">{safeAnnouncements[0].title}</span>
             </div>
             <button
               type="button"
-              onClick={() => onNavigate((announcements[0].linkPath as RoutePath) || '/events')}
+              onClick={() => onNavigate((safeAnnouncements[0].linkPath as RoutePath) || '/events')}
               className="inline-flex items-center gap-1 text-xs font-semibold text-teal-300 hover:text-white whitespace-nowrap shrink-0 cursor-pointer"
             >
               <span>View details</span>
@@ -77,16 +87,17 @@ export function HomePage({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-stretch">
             <div className="lg:col-span-6 flex flex-col justify-center space-y-5 py-2">
               <p className="text-sm font-semibold tracking-wide text-teal-700">
-                {content.heroTagline}
+                {content?.heroTagline || 'Connect · Discover · Advance'}
               </p>
               <h1
                 className="font-display font-bold text-[#0F2442] leading-[1.12] tracking-tight"
                 style={{ fontSize: 'clamp(2.15rem, 3.6vw, 3.25rem)', textWrap: 'balance' }}
               >
-                {content.heroTitle}
+                {content?.heroTitle || 'RxOrbit'}
               </h1>
               <p className="text-base sm:text-lg text-slate-600 leading-relaxed max-w-xl">
-                {content.heroSubtitle}
+                {content?.heroSubtitle ||
+                  'A pharmacy student educational community connecting B.Pharm and M.Pharm students, educators, and student coordinators.'}
               </p>
               <div className="flex flex-wrap items-center gap-3 pt-1">
                 <button
@@ -517,8 +528,8 @@ export function HomePage({
               About RxOrbit
             </h2>
             <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
-              {content.aboutSummary.trim()
-                ? content.aboutSummary
+              {aboutSummary.trim()
+                ? aboutSummary
                 : 'Verified organization details will appear here once supplied by the website owner.'}
             </p>
             <div className="flex flex-wrap gap-3 pt-1">
@@ -539,18 +550,18 @@ export function HomePage({
               </button>
             </div>
           </div>
-          {(content.vision.trim() || content.contactEmail.trim()) && (
+          {(vision.trim() || contactEmail.trim()) && (
             <div className="lg:col-span-4 border-t lg:border-t-0 lg:border-l border-slate-200 pt-6 lg:pt-0 lg:pl-8 space-y-4">
-              {content.vision.trim() && (
+              {vision.trim() && (
                 <div>
                   <div className="text-xs font-semibold text-slate-500">Our Vision</div>
-                  <p className="text-sm text-[#0F2442] mt-1 leading-relaxed">{content.vision}</p>
+                  <p className="text-sm text-[#0F2442] mt-1 leading-relaxed">{vision}</p>
                 </div>
               )}
-              {content.contactEmail.trim() && (
+              {contactEmail.trim() && (
                 <div>
                   <div className="text-xs font-semibold text-slate-500">Academic Contact</div>
-                  <p className="text-sm text-teal-700 font-medium mt-1">{content.contactEmail}</p>
+                  <p className="text-sm text-teal-700 font-medium mt-1">{contactEmail}</p>
                 </div>
               )}
             </div>

@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
@@ -14,10 +16,26 @@ import {
   normalizeRowValuesForPostgres,
 } from './schema-compat';
 import { hashPassword, verifyPassword } from './security';
+import { SQLITE_SCHEMA_SQL } from './sqlite';
 
-test('Live SQLite database matches the full 16-table RxOrbit schema contract', () => {
-  const sqlitePath = path.resolve(process.cwd(), 'data', 'rxorbit.sqlite');
-  const sqliteDb = new DatabaseSync(sqlitePath, { readOnly: true });
+test('SQLite database schema matches the full 16-table RxOrbit schema contract', () => {
+  const liveSqlitePath = path.resolve(process.cwd(), 'data', 'rxorbit.sqlite');
+  const hasLiveDb = fs.existsSync(liveSqlitePath);
+  const targetPath = hasLiveDb
+    ? liveSqlitePath
+    : path.join(os.tmpdir(), `rxorbit-schema-test-${Date.now()}.sqlite`);
+
+  if (!hasLiveDb) {
+    const initDb = new DatabaseSync(targetPath);
+    initDb.exec(SQLITE_SCHEMA_SQL);
+    initDb.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''");
+    initDb.exec("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
+    initDb.exec("ALTER TABLE users ADD COLUMN preferred_program TEXT NOT NULL DEFAULT 'All'");
+    initDb.exec("ALTER TABLE users ADD COLUMN preferred_subjects TEXT NOT NULL DEFAULT '[]'");
+    initDb.close();
+  }
+
+  const sqliteDb = new DatabaseSync(targetPath, { readOnly: true });
   try {
     const report = auditSqliteCompatibility(sqliteDb);
     assert.equal(report.checkedTables, 16);
@@ -25,6 +43,9 @@ test('Live SQLite database matches the full 16-table RxOrbit schema contract', (
     assert.equal(report.ok, true);
   } finally {
     sqliteDb.close();
+    if (!hasLiveDb && fs.existsSync(targetPath)) {
+      fs.unlinkSync(targetPath);
+    }
   }
 });
 

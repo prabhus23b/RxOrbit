@@ -28,10 +28,17 @@ export async function apiRequest<T>(
 
   const text = await res.text();
   let data: Record<string, unknown> = {};
+  let parseFailed = false;
   if (text) {
     try {
-      data = JSON.parse(text) as Record<string, unknown>;
+      const parsed: unknown = JSON.parse(text);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        data = parsed as Record<string, unknown>;
+      } else {
+        parseFailed = true;
+      }
     } catch {
+      parseFailed = true;
       data = { error: text };
     }
   }
@@ -42,6 +49,10 @@ export async function apiRequest<T>(
         ? data.error
         : `Request failed (${res.status})`;
     throw new Error(message);
+  }
+
+  if (parseFailed) {
+    throw new Error('Unexpected server response.');
   }
 
   return data as T;

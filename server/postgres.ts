@@ -5,6 +5,33 @@ export type SqlParam = string | number | boolean | Date | Buffer | null;
 export interface PostgresServiceError extends Error {
   code?: string;
   statusCode?: number;
+  safeDetail?: string;
+}
+
+export interface PostgresConnectionDiagnostics {
+  configured: boolean;
+  rawLength: number;
+  containsPostgresScheme: boolean;
+  startsWithEnvKeyPrefix: boolean;
+  wrappedInQuotes: boolean;
+  protocolValid: boolean;
+  urlParseable: boolean;
+  host: string | null;
+  port: number | null;
+  database: string | null;
+  isSupabasePoolerHost: boolean;
+  poolerMode: 'session' | 'transaction' | 'direct' | 'unknown';
+  usernameFormatValidForPooler: boolean;
+  passwordPresent: boolean;
+  passwordHasPlaceholder: boolean;
+  passwordWrappedInBrackets: boolean;
+  passwordContainsUnencodedSpecialChars: boolean;
+  querySslMode: string | null;
+  sslEnabled: boolean;
+  sslRejectUnauthorized: boolean;
+  poolMax: number;
+  connectionTimeoutMillis: number;
+  idleTimeoutMillis: number;
 }
 
 declare global {
@@ -233,44 +260,281 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function isLocalDatabaseHost(connectionString: string): boolean {
+export function redactConnectionSecrets(text: string): string {
+  return text
+    .replace(/(postgres(?:ql)?:\/\/)([^@\s/]+)@/gi, '$1[REDACTED]@')
+    .replace(/password=([^\s&;]+)/gi, 'password=[REDACTED]');
+}
+
+export function normalizeDatabaseUrl(rawValue: string): string {
+  let normalized = rawValue.trim();
+
+  // Strip accidental "DATABASE_URL=" prefix if the full .env line was pasted
+  if (/^DATABASE_URL\s*=/i.test(normalized)) {
+    normalized = normalized.replace(/^DATABASE_URL\s*=/i, '').trim();
+  }
+
+  // Strip accidental "psql " prefix if copied from Supabase CLI instructions
+  if (/^psql\s+/i.test(normalized)) {
+    normalized = normalized.replace(/^psql\s+/i, '').trim();
+  }
+
+  // Strip wrapping single or double quotes
+  if (
+    (normalized.startsWith('"') && normalized.endsWith('"')) ||
+    (normalized.startsWith("'") && normalized.endsWith("'"))
+  ) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+
+  return normalized;
+}
+
+interface ParsedConnectionTarget {
+  protocolValid: boolean;
+  urlParseable: boolean;
+  user?: string;
+  password?: string;
+  rawPassword?: string;
+  host?: string;
+  port?: number;
+  database?: string;
+  querySslMode: string | null;
+}
+
+function safeDecodeComponent(value: string): string {
   try {
-    const parsed = new URL(connectionString);
-    const host = parsed.hostname.toLowerCase();
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    return decodeURIComponent(value);
   } catch {
-    return false;
+    return value;
   }
 }
 
-export function buildPoolConfig(connectionString: string): PoolConfig {
-  const sslSetting = (process.env.DATABASE_SSL ?? process.env.PGSSLMODE ?? '').trim().toLowerCase();
-  const rejectUnauthorized =
+function parseConnectionTarget(connectionString: string): ParsedConnectionTarget {
+  const trimmed = normalizeDatabaseUrl(connectionString);
+  const protocolValid = /^postgres(?:ql)?:\/\//i.test(trimmed);
+  if (!protocolValid) {
+    return { protocolValid: false, urlParseable: false, querySslMode: null };
+  }
+
+  // Split greedily up to the last '@' before host[:port][/database][?query] so unencoded
+  // '@', '#', '?', '/', or ':' characters in a password do not break host extraction.
+  const regexMatch = trimmed.match(
+    /^postgres(?:ql)?:\/\/([^:@/?#]+):([\s\S]*)@([^@/?#\s]+?)(?::(\d+))?(?:\/([^?#]*))?(\?[\s\S]*)?$/i
+  );
+
+  if (regexMatch) {
+    const [, rawUser, rawPassword, host, rawPort, rawDb, rawQuery] = regexMatch;
+    const port = rawPort ? Number.parseInt(rawPort, 10) : 5432;
+    const params = new URLSearchParams(rawQuery || '');
+    const querySslMode = params.get('sslmode')?.trim().toLowerCase() ?? null;
+    const database = safeDecodeComponent((rawDb || 'postgres').trim() || 'postgres');
+    const user = safeDecodeComponent(rawUser);
+    const password = safeDecodeComponent(rawPassword);
+
+    return {
+      protocolValid: true,
+      urlParseable: Number.isInteger(port) && port > 0 && port <= 65535 && Boolean(host),
+      user,
+      password,
+      rawPassword,
+      host,
+      port: Number.isInteger(port) && port > 0 && port <= 65535 ? port : undefined,
+      database,
+      querySslMode,
+    };
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    const port = parsed.port ? Number.parseInt(parsed.port, 10) : 5432;
+    const database = safeDecodeComponent(parsed.pathname.replace(/^\/+/, '') || 'postgres');
+    return {
+      protocolValid: true,
+      urlParseable: Boolean(parsed.hostname),
+      user: parsed.username ? safeDecodeComponent(parsed.username) : undefined,
+      password: parsed.password ? safeDecodeComponent(parsed.password) : undefined,
+      rawPassword: parsed.password || undefined,
+      host: parsed.hostname || undefined,
+      port: Number.isInteger(port) && port > 0 ? port : 5432,
+      database,
+      querySslMode: parsed.searchParams.get('sslmode')?.trim().toLowerCase() ?? null,
+    };
+  } catch {
+    return { protocolValid: true, urlParseable: false, querySslMode: null };
+  }
+}
+
+function isLocalHostname(host: string | undefined): boolean {
+  if (!host) return false;
+  const normalized = host.toLowerCase();
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1';
+}
+
+function resolveSslOptions(parsed: ParsedConnectionTarget): {
+  ssl: PoolConfig['ssl'];
+  sslEnabled: boolean;
+  rejectUnauthorized: boolean;
+} {
+  const sslSetting = (
+    process.env.DATABASE_SSL ??
+    process.env.PGSSLMODE ??
+    parsed.querySslMode ??
+    ''
+  )
+    .trim()
+    .toLowerCase();
+  const explicitReject =
     (process.env.DATABASE_SSL_REJECT_UNAUTHORIZED ?? '').trim().toLowerCase() === 'true';
 
-  let ssl: PoolConfig['ssl'];
   if (sslSetting === 'disable' || sslSetting === 'false' || sslSetting === 'off') {
-    ssl = false;
-  } else if (
+    // Only allow plaintext on localhost; remote hosts must keep TLS enabled
+    if (isLocalHostname(parsed.host)) {
+      return { ssl: false, sslEnabled: false, rejectUnauthorized: false };
+    }
+  }
+
+  if (
     sslSetting === 'require' ||
     sslSetting === 'true' ||
     sslSetting === 'verify-ca' ||
     sslSetting === 'verify-full' ||
-    !isLocalDatabaseHost(connectionString)
+    !isLocalHostname(parsed.host)
   ) {
-    ssl = {
-      rejectUnauthorized:
-        rejectUnauthorized || sslSetting === 'verify-ca' || sslSetting === 'verify-full',
+    const rejectUnauthorized =
+      explicitReject || sslSetting === 'verify-ca' || sslSetting === 'verify-full';
+    return {
+      ssl: { rejectUnauthorized },
+      sslEnabled: true,
+      rejectUnauthorized,
+    };
+  }
+
+  return { ssl: undefined, sslEnabled: false, rejectUnauthorized: false };
+}
+
+export function inspectDatabaseUrlSafety(
+  rawUrl = process.env.DATABASE_URL?.trim()
+): PostgresConnectionDiagnostics {
+  const max = parsePositiveInt(process.env.PG_POOL_MAX, 10);
+  const idleTimeoutMillis = parsePositiveInt(process.env.PG_IDLE_TIMEOUT_MS, 30_000);
+  const connectionTimeoutMillis = parsePositiveInt(process.env.PG_CONNECTION_TIMEOUT_MS, 15_000);
+
+  if (!rawUrl) {
+    return {
+      configured: false,
+      rawLength: 0,
+      containsPostgresScheme: false,
+      startsWithEnvKeyPrefix: false,
+      wrappedInQuotes: false,
+      protocolValid: false,
+      urlParseable: false,
+      host: null,
+      port: null,
+      database: null,
+      isSupabasePoolerHost: false,
+      poolerMode: 'unknown',
+      usernameFormatValidForPooler: false,
+      passwordPresent: false,
+      passwordHasPlaceholder: false,
+      passwordWrappedInBrackets: false,
+      passwordContainsUnencodedSpecialChars: false,
+      querySslMode: null,
+      sslEnabled: false,
+      sslRejectUnauthorized: false,
+      poolMax: max,
+      connectionTimeoutMillis,
+      idleTimeoutMillis,
+    };
+  }
+
+  const containsPostgresScheme = /postgres(?:ql)?:\/\//i.test(rawUrl);
+  const startsWithEnvKeyPrefix = /^DATABASE_URL\s*=/i.test(rawUrl);
+  const wrappedInQuotes =
+    (rawUrl.startsWith('"') && rawUrl.endsWith('"')) ||
+    (rawUrl.startsWith("'") && rawUrl.endsWith("'"));
+
+  const parsed = parseConnectionTarget(rawUrl);
+  const sslResolved = resolveSslOptions(parsed);
+  const hostLower = (parsed.host ?? '').toLowerCase();
+  const isSupabasePoolerHost = hostLower.endsWith('.pooler.supabase.com');
+  const poolerMode: PostgresConnectionDiagnostics['poolerMode'] = isSupabasePoolerHost
+    ? parsed.port === 6543
+      ? 'transaction'
+      : 'session'
+    : hostLower.endsWith('.supabase.co')
+      ? 'direct'
+      : 'unknown';
+
+  const rawPass = parsed.rawPassword ?? '';
+  const passwordHasPlaceholder =
+    /\[YOUR-DATABASE-PASSWORD\]|\[YOUR-PASSWORD\]|YOUR-DATABASE-PASSWORD/i.test(rawUrl);
+  const passwordWrappedInBrackets = rawPass.startsWith('[') && rawPass.endsWith(']');
+  const passwordContainsUnencodedSpecialChars = /[@#?/:[\]\s]/.test(rawPass);
+  const usernameFormatValidForPooler = !isSupabasePoolerHost
+    ? Boolean(parsed.user)
+    : /^postgres\.[a-z0-9]+$/i.test(parsed.user ?? '');
+
+  return {
+    configured: true,
+    rawLength: rawUrl.length,
+    containsPostgresScheme,
+    startsWithEnvKeyPrefix,
+    wrappedInQuotes,
+    protocolValid: parsed.protocolValid,
+    urlParseable: parsed.urlParseable,
+    host: parsed.host ?? null,
+    port: parsed.port ?? null,
+    database: parsed.database ?? null,
+    isSupabasePoolerHost,
+    poolerMode,
+    usernameFormatValidForPooler,
+    passwordPresent: Boolean(rawPass.length > 0),
+    passwordHasPlaceholder,
+    passwordWrappedInBrackets,
+    passwordContainsUnencodedSpecialChars,
+    querySslMode: parsed.querySslMode,
+    sslEnabled: sslResolved.sslEnabled,
+    sslRejectUnauthorized: sslResolved.rejectUnauthorized,
+    poolMax: max,
+    connectionTimeoutMillis,
+    idleTimeoutMillis,
+  };
+}
+
+export function buildPoolConfig(connectionString: string): PoolConfig {
+  const normalized = normalizeDatabaseUrl(connectionString);
+  const parsed = parseConnectionTarget(normalized);
+  const { ssl } = resolveSslOptions(parsed);
+
+  const baseConfig: PoolConfig = {
+    max: parsePositiveInt(process.env.PG_POOL_MAX, 10),
+    idleTimeoutMillis: parsePositiveInt(process.env.PG_IDLE_TIMEOUT_MS, 30_000),
+    connectionTimeoutMillis: parsePositiveInt(process.env.PG_CONNECTION_TIMEOUT_MS, 15_000),
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
+    application_name: 'rxorbit-backend',
+    ssl,
+  };
+
+  // Pass explicit connection fields instead of connectionString when parsed cleanly so:
+  // 1) pg-connection-string cannot fail or mis-split on special password chars (@, #, ?, /), and
+  // 2) ?sslmode=require in DATABASE_URL does not override ssl.rejectUnauthorized with verify-full
+  //    against Supabase Session Pooler's certificate chain.
+  if (parsed.urlParseable && parsed.host && parsed.user) {
+    return {
+      ...baseConfig,
+      host: parsed.host,
+      port: parsed.port ?? 5432,
+      database: parsed.database ?? 'postgres',
+      user: parsed.user,
+      password: parsed.password,
     };
   }
 
   return {
-    connectionString,
-    max: parsePositiveInt(process.env.PG_POOL_MAX, 10),
-    idleTimeoutMillis: parsePositiveInt(process.env.PG_IDLE_TIMEOUT_MS, 30_000),
-    connectionTimeoutMillis: parsePositiveInt(process.env.PG_CONNECTION_TIMEOUT_MS, 15_000),
-    application_name: 'rxorbit-backend',
-    ssl,
+    ...baseConfig,
+    connectionString: normalized,
   };
 }
 
@@ -279,8 +543,8 @@ export function getPostgresPool(): Pool {
     return globalThis.__rxorbitPgPool;
   }
 
-  const connectionString = process.env.DATABASE_URL?.trim();
-  if (!connectionString) {
+  const rawConnectionString = process.env.DATABASE_URL?.trim();
+  if (!rawConnectionString) {
     const err: PostgresServiceError = new Error(
       'PostgreSQL connection is not configured. Set DATABASE_URL in the server environment.'
     );
@@ -288,9 +552,32 @@ export function getPostgresPool(): Pool {
     throw err;
   }
 
+  const connectionString = normalizeDatabaseUrl(rawConnectionString);
+
+  if (/\[YOUR-DATABASE-PASSWORD\]|\[YOUR-PASSWORD\]/i.test(connectionString)) {
+    const err: PostgresServiceError = new Error(
+      'DATABASE_URL still contains the database password placeholder. Replace it with your actual Supabase database password.'
+    );
+    err.statusCode = 503;
+    throw err;
+  }
+
+  if (!/^postgres(?:ql)?:\/\//i.test(connectionString)) {
+    const err: PostgresServiceError = new Error(
+      'DATABASE_URL is invalid: it must be a PostgreSQL connection URI starting with postgresql:// or postgres:// (not a bare string or base path).'
+    );
+    err.code = 'INVALID_DATABASE_URL';
+    err.statusCode = 503;
+    err.safeDetail = err.message;
+    throw err;
+  }
+
   const pool = new Pool(buildPoolConfig(connectionString));
   pool.on('error', (poolError) => {
-    console.error('[postgres] Unexpected idle client error:', poolError.message);
+    console.error(
+      '[postgres] Unexpected idle client error:',
+      redactConnectionSecrets(poolError.message)
+    );
   });
 
   globalThis.__rxorbitPgPool = pool;
@@ -308,11 +595,21 @@ export async function closePostgresPool(): Promise<void> {
 export function sanitizePostgresError(err: unknown): PostgresServiceError {
   const pgErr = err as { code?: string; message?: string; statusCode?: number };
   const code = typeof pgErr?.code === 'string' ? pgErr.code : undefined;
+  const rawMessage = typeof pgErr?.message === 'string' ? redactConnectionSecrets(pgErr.message) : '';
+
+  if (code || rawMessage) {
+    console.error(
+      `[postgres] Database error (code=${code ?? 'NONE'}): ${rawMessage || 'Unknown database error'}`
+    );
+  }
 
   let message = 'Database operation failed.';
   let statusCode = typeof pgErr?.statusCode === 'number' ? pgErr.statusCode : 500;
 
-  if (code === '23505') {
+  if (code === 'INVALID_DATABASE_URL') {
+    message = rawMessage || 'DATABASE_URL is not a valid PostgreSQL connection URI.';
+    statusCode = 503;
+  } else if (code === '23505') {
     message = 'A record with this unique value already exists.';
     statusCode = 409;
   } else if (code === '23503') {
@@ -321,16 +618,33 @@ export function sanitizePostgresError(err: unknown): PostgresServiceError {
   } else if (code === '23502' || code === '22P02' || code === '23514') {
     message = 'Invalid database field value.';
     statusCode = 400;
-  } else if (code === '57P01' || code === '57P02' || code === '57P03' || code === 'ECONNREFUSED') {
-    message = 'Database service is temporarily unavailable.';
+  } else if (code === '28P01' || code === '28000') {
+    message = 'Database authentication failed. Check the credentials in DATABASE_URL.';
     statusCode = 503;
-  } else if (!code && pgErr?.message && !pgErr.message.includes('postgres://') && !pgErr.message.includes('postgresql://')) {
-    message = pgErr.message;
+  } else if (
+    code === '57P01' ||
+    code === '57P02' ||
+    code === '57P03' ||
+    code === 'ECONNREFUSED' ||
+    code === 'ENOTFOUND' ||
+    code === 'EAI_AGAIN' ||
+    code === 'ETIMEDOUT' ||
+    code === 'ECONNRESET' ||
+    code === 'XX000'
+  ) {
+    message = 'Database service is temporarily unavailable or unreachable.';
+    statusCode = 503;
+  } else if (code === 'SELF_SIGNED_CERT_IN_CHAIN' || code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE') {
+    message = 'Database TLS certificate verification failed.';
+    statusCode = 503;
+  } else if (!code && rawMessage) {
+    message = rawMessage;
   }
 
   const wrapped: PostgresServiceError = new Error(message, { cause: err });
   wrapped.code = code;
   wrapped.statusCode = statusCode;
+  wrapped.safeDetail = rawMessage || message;
   return wrapped;
 }
 

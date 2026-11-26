@@ -8,6 +8,18 @@ interface FooterProps {
 }
 
 export function Footer({ content, onNavigate }: FooterProps) {
+  const heroTagline =
+    typeof content?.heroTagline === 'string' && content.heroTagline
+      ? content.heroTagline
+      : 'Connect · Discover · Advance';
+  const contactEmail = typeof content?.contactEmail === 'string' ? content.contactEmail.trim() : '';
+  const contactPhone = typeof content?.contactPhone === 'string' ? content.contactPhone.trim() : '';
+  const contactAddress =
+    typeof content?.contactAddress === 'string' ? content.contactAddress.trim() : '';
+  const linkedinUrl = typeof content?.linkedinUrl === 'string' ? content.linkedinUrl.trim() : '';
+  const instagramUrl = typeof content?.instagramUrl === 'string' ? content.instagramUrl.trim() : '';
+  const youtubeUrl = typeof content?.youtubeUrl === 'string' ? content.youtubeUrl.trim() : '';
+
   return (
     <footer className="bg-[#0F2442] text-slate-300 border-t border-slate-800 mt-20">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 py-14 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10">
@@ -19,7 +31,7 @@ export function Footer({ content, onNavigate }: FooterProps) {
               className="h-14 w-auto object-contain"
             />
           </div>
-          <p className="text-sm font-medium text-teal-300">{content.heroTagline}</p>
+          <p className="text-sm font-medium text-teal-300">{heroTagline}</p>
           <p className="text-sm text-slate-300 leading-relaxed max-w-xs">
             A pharmacy student educational community connecting B.Pharm and M.Pharm learners,
             educators, and student coordinators.
@@ -139,44 +151,44 @@ export function Footer({ content, onNavigate }: FooterProps) {
 
         <div className="space-y-3">
           <h3 className="text-sm font-semibold text-white">Contact &amp; Connect</h3>
-          {!content.contactEmail.trim() &&
-          !content.contactPhone.trim() &&
-          !content.contactAddress.trim() &&
-          !content.linkedinUrl.trim() &&
-          !content.instagramUrl.trim() &&
-          !content.youtubeUrl.trim() ? (
+          {!contactEmail &&
+          !contactPhone &&
+          !contactAddress &&
+          !linkedinUrl &&
+          !instagramUrl &&
+          !youtubeUrl ? (
             <p className="text-xs text-slate-400">Contact details will be updated soon.</p>
           ) : (
             <>
               <div className="space-y-2 text-sm">
-                {content.contactEmail.trim() && (
+                {contactEmail && (
                   <div className="flex items-start gap-2">
                     <Mail className="h-4 w-4 text-teal-400 shrink-0 mt-0.5" />
                     <a
-                      href={`mailto:${content.contactEmail}`}
+                      href={`mailto:${contactEmail}`}
                       className="hover:text-white transition-colors break-all"
                     >
-                      {content.contactEmail}
+                      {contactEmail}
                     </a>
                   </div>
                 )}
-                {content.contactPhone.trim() && (
+                {contactPhone && (
                   <div className="flex items-start gap-2">
                     <Phone className="h-4 w-4 text-teal-400 shrink-0 mt-0.5" />
-                    <span className="tabular-nums">{content.contactPhone}</span>
+                    <span className="tabular-nums">{contactPhone}</span>
                   </div>
                 )}
-                {content.contactAddress.trim() && (
+                {contactAddress && (
                   <div className="flex items-start gap-2">
                     <MapPin className="h-4 w-4 text-teal-400 shrink-0 mt-0.5" />
-                    <span>{content.contactAddress}</span>
+                    <span>{contactAddress}</span>
                   </div>
                 )}
               </div>
               <div className="flex items-center gap-4 pt-2 text-xs font-medium">
-                {content.linkedinUrl.trim() && (
+                {linkedinUrl && (
                   <a
-                    href={content.linkedinUrl}
+                    href={linkedinUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-teal-300 hover:text-white transition-colors"
@@ -184,9 +196,9 @@ export function Footer({ content, onNavigate }: FooterProps) {
                     LinkedIn
                   </a>
                 )}
-                {content.instagramUrl.trim() && (
+                {instagramUrl && (
                   <a
-                    href={content.instagramUrl}
+                    href={instagramUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-teal-300 hover:text-white transition-colors"
@@ -194,9 +206,9 @@ export function Footer({ content, onNavigate }: FooterProps) {
                     Instagram
                   </a>
                 )}
-                {content.youtubeUrl.trim() && (
+                {youtubeUrl && (
                   <a
-                    href={content.youtubeUrl}
+                    href={youtubeUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-teal-300 hover:text-white transition-colors"

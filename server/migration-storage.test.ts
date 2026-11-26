@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
 import {
   TABLE_MIGRATION_ORDER,
   runSqliteToPostgresMigration,
 } from './migrate-sqlite-to-postgres';
 import { RXORBIT_SCHEMA_CONTRACT } from './schema-compat';
+import { SQLITE_SCHEMA_SQL } from './sqlite';
 import { getStorageMode, inferContentType, sanitizeStorageKey } from './storage';
 
 test('TABLE_MIGRATION_ORDER includes all 16 contracted tables in FK dependency order', () => {
@@ -24,12 +29,34 @@ test('TABLE_MIGRATION_ORDER includes all 16 contracted tables in FK dependency o
   assert.ok(indexOf('users') < indexOf('notification_reads'));
 });
 
-test('runSqliteToPostgresMigration dry-run validates live SQLite without creating fake rows', async () => {
-  const report = await runSqliteToPostgresMigration({ dryRun: true });
-  assert.equal(report.dryRun, true);
-  assert.equal(report.tables.length, 16);
-  for (const table of report.tables) {
-    assert.equal(table.migratedRows, 0);
+test('runSqliteToPostgresMigration dry-run validates SQLite without creating fake rows', async () => {
+  const liveSqlitePath = path.resolve(process.cwd(), 'data', 'rxorbit.sqlite');
+  const hasLiveDb = fs.existsSync(liveSqlitePath);
+  const targetPath = hasLiveDb
+    ? liveSqlitePath
+    : path.join(os.tmpdir(), `rxorbit-mig-test-${Date.now()}.sqlite`);
+
+  if (!hasLiveDb) {
+    const initDb = new DatabaseSync(targetPath);
+    initDb.exec(SQLITE_SCHEMA_SQL);
+    initDb.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''");
+    initDb.exec("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
+    initDb.exec("ALTER TABLE users ADD COLUMN preferred_program TEXT NOT NULL DEFAULT 'All'");
+    initDb.exec("ALTER TABLE users ADD COLUMN preferred_subjects TEXT NOT NULL DEFAULT '[]'");
+    initDb.close();
+  }
+
+  try {
+    const report = await runSqliteToPostgresMigration({ sqlitePath: targetPath, dryRun: true });
+    assert.equal(report.dryRun, true);
+    assert.equal(report.tables.length, 16);
+    for (const table of report.tables) {
+      assert.equal(table.migratedRows, 0);
+    }
+  } finally {
+    if (!hasLiveDb && fs.existsSync(targetPath)) {
+      fs.unlinkSync(targetPath);
+    }
   }
 });
 

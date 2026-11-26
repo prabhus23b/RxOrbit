@@ -50,6 +50,33 @@ const DEFAULT_CONTENT: SiteContent = {
   youtubeUrl: '',
 };
 
+function normalizeSiteContent(raw: unknown): SiteContent {
+  if (!raw || typeof raw !== 'object') {
+    return DEFAULT_CONTENT;
+  }
+  const src = raw as Partial<Record<keyof SiteContent, unknown>>;
+  const pickString = (key: keyof SiteContent): string =>
+    typeof src[key] === 'string' ? src[key] : DEFAULT_CONTENT[key];
+
+  return {
+    heroTitle: pickString('heroTitle'),
+    heroSubtitle: pickString('heroSubtitle'),
+    heroTagline: pickString('heroTagline'),
+    aboutSummary: pickString('aboutSummary'),
+    vision: pickString('vision'),
+    mission: pickString('mission'),
+    objectives: pickString('objectives'),
+    whyRxOrbit: pickString('whyRxOrbit'),
+    commitment: pickString('commitment'),
+    contactEmail: pickString('contactEmail'),
+    contactPhone: pickString('contactPhone'),
+    contactAddress: pickString('contactAddress'),
+    linkedinUrl: pickString('linkedinUrl'),
+    instagramUrl: pickString('instagramUrl'),
+    youtubeUrl: pickString('youtubeUrl'),
+  };
+}
+
 function readLocationState(): { path: RoutePath; search: string } {
   return parseAppLocation(
     window.location.pathname || '/',
@@ -76,24 +103,46 @@ function AppShell() {
 
   const loadPublicData = useCallback(async () => {
     try {
-      const [contentRes, currRes, matRes, evRes, galRes, teamRes, voiceRes] = await Promise.all([
-        apiRequest<{ content: SiteContent; announcements: Announcement[] }>('/api/content'),
-        apiRequest<{ units: CurriculumUnit[] }>('/api/curriculum'),
-        apiRequest<{ materials: StudyMaterial[] }>('/api/materials'),
-        apiRequest<{ events: RxEvent[] }>('/api/events'),
-        apiRequest<{ albums: GalleryAlbum[]; photos: GalleryPhoto[] }>('/api/gallery'),
-        apiRequest<{ members: TeamMember[] }>('/api/team'),
-        apiRequest<{ voices: VoiceEntry[] }>('/api/voices'),
-      ]);
-      setSiteContent(contentRes.content);
-      setAnnouncements(contentRes.announcements);
-      setCurriculumUnits(currRes.units);
-      setMaterials(matRes.materials);
-      setEvents(evRes.events);
-      setAlbums(galRes.albums);
-      setPhotos(galRes.photos);
-      setTeam(teamRes.members);
-      setVoices(voiceRes.voices);
+      const [contentRes, currRes, matRes, evRes, galRes, teamRes, voiceRes] =
+        await Promise.allSettled([
+          apiRequest<{ content?: SiteContent; announcements?: Announcement[] }>('/api/content'),
+          apiRequest<{ units?: CurriculumUnit[] }>('/api/curriculum'),
+          apiRequest<{ materials?: StudyMaterial[] }>('/api/materials'),
+          apiRequest<{ events?: RxEvent[] }>('/api/events'),
+          apiRequest<{ albums?: GalleryAlbum[]; photos?: GalleryPhoto[] }>('/api/gallery'),
+          apiRequest<{ members?: TeamMember[] }>('/api/team'),
+          apiRequest<{ voices?: VoiceEntry[] }>('/api/voices'),
+        ]);
+
+      if (contentRes.status === 'fulfilled' && contentRes.value) {
+        setSiteContent(normalizeSiteContent(contentRes.value.content));
+        if (Array.isArray(contentRes.value.announcements)) {
+          setAnnouncements(contentRes.value.announcements);
+        }
+      }
+      if (currRes.status === 'fulfilled' && Array.isArray(currRes.value?.units)) {
+        setCurriculumUnits(currRes.value.units);
+      }
+      if (matRes.status === 'fulfilled' && Array.isArray(matRes.value?.materials)) {
+        setMaterials(matRes.value.materials);
+      }
+      if (evRes.status === 'fulfilled' && Array.isArray(evRes.value?.events)) {
+        setEvents(evRes.value.events);
+      }
+      if (galRes.status === 'fulfilled' && galRes.value) {
+        if (Array.isArray(galRes.value.albums)) {
+          setAlbums(galRes.value.albums);
+        }
+        if (Array.isArray(galRes.value.photos)) {
+          setPhotos(galRes.value.photos);
+        }
+      }
+      if (teamRes.status === 'fulfilled' && Array.isArray(teamRes.value?.members)) {
+        setTeam(teamRes.value.members);
+      }
+      if (voiceRes.status === 'fulfilled' && Array.isArray(voiceRes.value?.voices)) {
+        setVoices(voiceRes.value.voices);
+      }
     } catch {
       // keep fallback state on transient failure
     } finally {

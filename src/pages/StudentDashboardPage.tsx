@@ -69,15 +69,21 @@ export function StudentDashboardPage({ onNavigate }: StudentDashboardPageProps) 
     (async () => {
       setLoading(true);
       try {
-        const [regRes, certRes, voiceRes] = await Promise.all([
-          apiRequest<{ registrations: EventRegistration[] }>('/api/my/registrations'),
-          apiRequest<{ certificates: Certificate[] }>('/api/my/certificates'),
-          apiRequest<{ voices: VoiceEntry[] }>('/api/my/voices'),
+        const [regRes, certRes, voiceRes] = await Promise.allSettled([
+          apiRequest<{ registrations?: EventRegistration[] }>('/api/my/registrations'),
+          apiRequest<{ certificates?: Certificate[] }>('/api/my/certificates'),
+          apiRequest<{ voices?: VoiceEntry[] }>('/api/my/voices'),
         ]);
         if (!active) return;
-        setRegistrations(regRes.registrations);
-        setCertificates(certRes.certificates);
-        setVoices(voiceRes.voices);
+        if (regRes.status === 'fulfilled' && Array.isArray(regRes.value?.registrations)) {
+          setRegistrations(regRes.value.registrations);
+        }
+        if (certRes.status === 'fulfilled' && Array.isArray(certRes.value?.certificates)) {
+          setCertificates(certRes.value.certificates);
+        }
+        if (voiceRes.status === 'fulfilled' && Array.isArray(voiceRes.value?.voices)) {
+          setVoices(voiceRes.value.voices);
+        }
       } catch {
         // ignore
       } finally {
